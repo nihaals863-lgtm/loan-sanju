@@ -67,6 +67,7 @@ model User {
   agentCommissions      Commission[] @relation("AgentCommissions")
   borrowerCommissions   Commission[] @relation("BorrowerCommissions")
   notifications         Notification[]
+  @@map("users")
 }
 
 model Loan {
