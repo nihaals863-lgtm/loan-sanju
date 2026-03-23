@@ -1,0 +1,83 @@
+{
+	"info": {
+		"name": "Global Loan Connect APIs",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Authentication",
+			"item": [
+				{
+					"name": "Register User (Borrower/Agent)",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"url": {"raw": "http://localhost:5000/api/auth/register", "host": ["http", "localhost"], "port": "5000", "path": ["api", "auth", "register"]},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"John Doe\",\n  \"email\": \"john@example.com\",\n  \"phone\": \"+2601234567\",\n  \"password\": \"123456\",\n  \"role\": \"BORROWER\"\n}"
+						}
+					}
+				},
+				{
+					"name": "Login User",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"url": {"raw": "http://localhost:5000/api/auth/login", "host": ["http", "localhost"], "port": "5000", "path": ["api", "auth", "login"]},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"john@example.com\",\n  \"password\": \"123456\"\n}"
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "2. Client Actions",
+			"item": [
+				{
+					"name": "Apply For Loan",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Authorization", "value": "Bearer YOUR_TOKEN_HERE"}],
+						"url": {"raw": "http://localhost:5000/api/client/loans/apply", "host": ["http", "localhost"], "port": "5000", "path": ["api", "client", "loans", "apply"]},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"amount\": 5000,\n  \"duration\": 12,\n  \"interest\": 5.5\n}"
+						}
+					}
+				},
+				{
+					"name": "My Loans",
+					"request": {
+						"method": "GET",
+						"header": [{"key": "Authorization", "value": "Bearer YOUR_TOKEN_HERE"}],
+						"url": {"raw": "http://localhost:5000/api/client/loans/my", "host": ["http", "localhost"], "port": "5000", "path": ["api", "client", "loans", "my"]}
+					}
+				}
+			]
+		},
+		{
+			"name": "3. Admin Actions",
+			"item": [
+				{
+					"name": "Get All Users",
+					"request": {
+						"method": "GET",
+						"header": [{"key": "Authorization", "value": "Bearer YOUR_ADMIN_TOKEN_HERE"}],
+						"url": {"raw": "http://localhost:5000/api/admin/users", "host": ["http", "localhost"], "port": "5000", "path": ["api", "admin", "users"]}
+					}
+				},
+				{
+					"name": "Approve Loan (ID 1)",
+					"request": {
+						"method": "PUT",
+						"header": [{"key": "Authorization", "value": "Bearer YOUR_ADMIN_TOKEN_HERE"}],
+						"url": {"raw": "http://localhost:5000/api/admin/loans/1/approve", "host": ["http", "localhost"], "port": "5000", "path": ["api", "admin", "loans", "1", "approve"]}
+					}
+				}
+			]
+		}
+	]
+}

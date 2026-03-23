@@ -1,0 +1,161 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  STAFF
+  BORROWER
+  AGENT
+}
+
+enum LoanStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ACTIVE
+  COMPLETED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  VERIFIED
+  LATE
+}
+
+enum PaymentMethod {
+  CASH
+  WIRE
+  TRX
+}
+
+enum Risk {
+  GREEN
+  AMBER
+  RED
+}
+
+model User {
+  id         Int      @id @default(autoincrement())
+  name       String
+  email      String   @unique
+  phone      String   @unique
+  password   String
+  role       Role     @default(BORROWER)
+  isVerified Boolean  @default(false)
+  risk       Risk     @default(GREEN)
+  
+  // Profile Fields
+  businessName String?
+  nrc          String?  @unique
+  dob          DateTime?
+  address      String?  @db.Text
+  documentUrl  String?
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  loans                 Loan[]
+  loansAsAgent          Loan[] @relation("LoanAgent")
+  collaterals           Collateral[]
+  agentCommissions      Commission[] @relation("AgentCommissions")
+  borrowerCommissions   Commission[] @relation("BorrowerCommissions")
+  notifications         Notification[]
+}
+
+model Loan {
+  id        Int        @id @default(autoincrement())
+  userId    Int
+  user      User       @relation(fields: [userId], references: [id])
+  agentId   Int?
+  agent     User?      @relation("LoanAgent", fields: [agentId], references: [id])
+  amount    Float
+  duration  Int        // in months
+  interest  Float
+  
+  agentPercentage   Float @default(0)
+  lateFeePercentage Float @default(0)
+  graceDays         Int   @default(0)
+
+  status    LoanStatus @default(PENDING)
+  dueDate   DateTime?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  payments  Payment[]
+}
+
+model Payment {
+  id        Int           @id @default(autoincrement())
+  loanId    Int
+  loan      Loan          @relation(fields: [loanId], references: [id])
+  amount    Float
+  
+  lateDays    Int?
+  lateAmount  Float?
+  totalAmount Float @default(0)
+
+  status    PaymentStatus @default(PENDING)
+  method    PaymentMethod @default(CASH)
+  trxId     String?       @unique
+  paidAt    DateTime?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+model Commission {
+  id         Int      @id @default(autoincrement())
+  agentId    Int
+  agent      User     @relation("AgentCommissions", fields: [agentId], references: [id])
+  borrowerId Int
+  borrower   User     @relation("BorrowerCommissions", fields: [borrowerId], references: [id])
+  amount     Float
+  percentage Float
+  createdAt  DateTime @default(now())
+}
+
+model Collateral {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  imageUrl  String
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Notification ───────────────────────────
+enum NotificationType {
+  SMS
+  EMAIL
+  SYSTEM
+}
+
+model Notification {
+  id        Int              @id @default(autoincrement())
+  userId    Int
+  user      User             @relation(fields: [userId], references: [id])
+  title     String
+  message   String           @db.Text
+  type      NotificationType @default(SYSTEM)
+  status    String           @default("SENT") // SENT, FAILED
+  error     String?          @db.Text
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+}
+
+// ─── Settings (System-wide config) ──────────
+model Settings {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String   @db.Text
+  label     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
