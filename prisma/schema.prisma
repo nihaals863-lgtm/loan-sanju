@@ -90,6 +90,7 @@ model Loan {
   updatedAt DateTime   @updatedAt
 
   payments  Payment[]
+  @@map("loan")
 }
 
 model Payment {
@@ -108,6 +109,7 @@ model Payment {
   paidAt    DateTime?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
+  @@map("payment")
 }
 
 model Commission {
@@ -119,6 +121,7 @@ model Commission {
   amount     Float
   percentage Float
   createdAt  DateTime @default(now())
+  @@map("commission")
 }
 
 model Collateral {
@@ -129,6 +132,7 @@ model Collateral {
   verified  Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  @@map("collateral")
 }
 
 // ─── Notification ───────────────────────────
@@ -149,6 +153,7 @@ model Notification {
   error     String?          @db.Text
   isRead    Boolean          @default(false)
   createdAt DateTime         @default(now())
+  @@map("notification")
 }
 
 // ─── Settings (System-wide config) ──────────
@@ -159,4 +164,5 @@ model Settings {
   label     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  @@map("settings")
 }
