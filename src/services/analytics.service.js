@@ -2,63 +2,121 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 const getDashboardStats = async (user) => {
-  try {
-    const { id, role } = user;
-    let whereUser = {};
-    let whereLoan = {};
-    let wherePayment = {};
+  const { id } = user;
+  const role = user?.role?.toUpperCase();
 
-    if (role === 'STAFF') {
-      // Assuming STAFF = Lender. In this schema, we might need a way to link staff to lenderId.
-      // For now, if role is STAFF, we might filter by a custom field if it existed.
-      // Wait, look at schema: Loan has `agentId`. Does it have `lenderId`?
-      // No, Loan has `userId` (Borrower) and `agentId`. 
-      // Where is the Lender? 
-      // Ah! In `mockData`, lenders have IDs like 'L1', 'L2'. 
-      // But in Prisma, maybe the 'User' with role 'STAFF' is the lender?
-      // Let's assume STAFF users are the owners of the loans they 'manage'.
-      // But there's no `lenderId` in the Loan model! 
-      // Wait, let's check schema again.
-    }
+  if (role === 'ADMIN' || role === 'LENDER' || role === 'STAFF') {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const in7Days = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-    if (role === 'AGENT') {
-      whereLoan = { agentId: id };
-      wherePayment = { loan: { agentId: id } };
-    }
-
-    // If ADMIN, everything is global.
     const [
       totalUsers,
       totalLoans,
+      pendingLoans,
       activeLoans,
+      overdueLoans,
+      totalPrincipal,
       pendingPayments,
-      latePayments,
-      totalCapitalRes
+      verifiedPayments,
+      totalCommissions,
+      upcomingPaymentsCount,
+      latePaymentsCount,
+      paidTodayCount,
     ] = await Promise.all([
-      prisma.user.count(role === 'ADMIN' ? {} : { where: { role: 'BORROWER' } }), // Only count borrowers if not admin? No, let's stay simple.
-      prisma.loan.count({ where: whereLoan }),
-      prisma.loan.count({ where: { ...whereLoan, status: 'ACTIVE' } }),
-      prisma.payment.count({ where: { ...wherePayment, status: 'PENDING' } }),
-      prisma.payment.count({ where: { ...wherePayment, status: 'LATE' } }),
-      prisma.loan.aggregate({
-        where: whereLoan,
-        _sum: { amount: true }
-      })
+      prisma.user.count({ where: { role: 'BORROWER' } }),
+      prisma.loan.count(),
+      prisma.loan.count({ where: { status: { in: ['PENDING', 'TERMS_SET', 'TERMS_ACCEPTED', 'FUNDS_CONFIRMED'] } } }),
+      prisma.loan.count({ where: { status: 'ACTIVE' } }),
+      prisma.payment.count({ where: { status: 'LATE' } }),
+      prisma.loan.aggregate({ _sum: { principalAmount: true } }),
+      prisma.payment.aggregate({
+        where: { status: 'PENDING' },
+        _sum: { totalCollected: true },
+        _count: { id: true },
+      }),
+      prisma.payment.aggregate({
+        where: { status: 'VERIFIED' },
+        _sum: { baseAmount: true, penaltyAmount: true, principalPaid: true },
+        _count: { id: true },
+      }),
+      prisma.commission.aggregate({ _sum: { amount: true } }),
+      // Upcoming: PENDING payments due within next 7 days
+      prisma.payment.count({
+        where: { status: 'PENDING', dueDate: { gte: new Date(), lte: in7Days } },
+      }),
+      // Late payments
+      prisma.payment.count({ where: { status: 'LATE' } }),
+      // Verified today
+      prisma.payment.count({
+        where: { status: 'VERIFIED', paidAt: { gte: today } },
+      }),
     ]);
 
     return {
-      totalUsers: role === 'ADMIN' ? totalUsers : await prisma.user.count({ where: { role: 'BORROWER' } }), // Simplification
+      totalUsers,
       totalLoans,
+      pendingLoans,
       activeLoans,
-      pendingPayments,
-      latePayments,
-      totalCapital: totalCapitalRes._sum.amount || 0
+      overdueLoans,
+      totalPrincipal: Number(totalPrincipal?._sum?.principalAmount || 0),
+      totalRevenue: Number(verifiedPayments?._sum?.baseAmount || 0) + Number(verifiedPayments?._sum?.penaltyAmount || 0),
+      totalInterest: Number(verifiedPayments?._sum?.baseAmount || 0),
+      totalLateFees: Number(verifiedPayments?._sum?.penaltyAmount || 0),
+      totalPrincipalPaid: Number(verifiedPayments?._sum?.principalPaid || 0),
+      totalCommission: Number(totalCommissions?._sum?.amount || 0),
+      netRevenue: (Number(verifiedPayments?._sum?.baseAmount || 0) + Number(verifiedPayments?._sum?.penaltyAmount || 0)) - Number(totalCommissions?._sum?.amount || 0),
+      pendingPaymentsCount: pendingPayments?._count?.id || 0,
+      pendingPaymentsAmount: Number(pendingPayments?._sum?.totalCollected || 0),
+      verifiedPaymentsCount: verifiedPayments?._count?.id || 0,
+      // New breakdown
+      upcomingPaymentsCount,
+      latePaymentsCount,
+      paidTodayCount,
     };
-  } catch (error) {
-    throw new Error('Error fetching dashboard stats: ' + error.message);
   }
+
+  if (role === 'BORROWER') {
+    const activeLoan = await prisma.loan.findFirst({
+      where: { userId: id, status: 'ACTIVE' },
+      include: { payments: { orderBy: { createdAt: 'desc' }, take: 5 } }
+    });
+
+    const totalPaidSum = activeLoan ? await prisma.payment.aggregate({
+      where: { loanId: activeLoan.id, status: 'VERIFIED' },
+      _sum: { totalCollected: true }
+    }) : { _sum: { totalCollected: 0 } };
+
+    return {
+      activeLoan,
+      totalPaid: Number(totalPaidSum?._sum?.totalCollected || 0)
+    };
+  }
+
+  if (role === 'AGENT') {
+    const [clientsCount, totalEarnings, commissions, activeLoans, pendingPayouts] = await Promise.all([
+      prisma.user.count({ where: { loansAsAgent: { some: { agentId: id } } } }),
+      prisma.commission.aggregate({ where: { agentId: id }, _sum: { amount: true } }),
+      prisma.commission.findMany({
+        where: { agentId: id },
+        include: { borrower: true },
+        orderBy: { createdAt: 'desc' },
+        take: 10
+      }),
+      prisma.loan.count({ where: { agentId: id, status: 'ACTIVE' } }),
+      prisma.payout.aggregate({ where: { agentId: id, status: 'PENDING' }, _sum: { amount: true } })
+    ]);
+
+    return {
+      clientsCount,
+      totalEarnings: Number(totalEarnings?._sum?.amount || 0),
+      recentCommissions: commissions,
+      activeLoans,
+      pendingPayout: Number(pendingPayouts?._sum?.amount || 0)
+    };
+  }
+
+  return {};
 };
 
-module.exports = {
-  getDashboardStats
-};
+module.exports = { getDashboardStats };

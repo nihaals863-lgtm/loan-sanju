@@ -1,5 +1,6 @@
 const express = require('express');
 const { getCommissions } = require('../controllers/commission.controller');
+const payoutController = require('../controllers/payout.controller');
 const analyticsController = require('../controllers/analytics.controller');
 const { authenticate } = require('../middleware/auth.middleware');
 const { authorizeRoles } = require('../middleware/role.middleware');
@@ -13,5 +14,9 @@ router.get('/stats', authenticate, authorizeRoles('AGENT'), analyticsController.
 router.get('/commissions', authenticate, authorizeRoles('AGENT', 'ADMIN'), getCommissions);
 router.get('/clients', authenticate, authorizeRoles('AGENT'), userController.getAgentClients);
 router.get('/notifications', authenticate, authorizeRoles('AGENT'), notificationController.getMyNotifications);
+
+// Payouts
+router.post('/payout', authenticate, authorizeRoles('AGENT'), payoutController.requestPayout);
+router.get('/payouts', authenticate, authorizeRoles('AGENT'), payoutController.getPayouts);
 
 module.exports = router;

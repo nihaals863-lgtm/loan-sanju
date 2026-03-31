@@ -26,13 +26,20 @@ const getUsers = async (role, search) => {
       phone: true,
       role: true,
       isVerified: true,
+      isApproved: true,
+      status: true,
       risk: true,
       businessName: true,
       nrc: true,
       dob: true,
       address: true,
       documentUrl: true,
-      createdAt: true
+      createdAt: true,
+      loans: {
+        where: { status: 'ACTIVE' },
+        select: { id: true, currentPrincipal: true, monthlyPaymentCurrent: true }
+      },
+      _count: { select: { loans: true } }
     },
     orderBy: { createdAt: 'desc' }
   });
@@ -41,8 +48,11 @@ const getUsers = async (role, search) => {
 const createUser = async (userData) => {
   const { name, email, phone, password, role, businessName, nrc, dob, address, documentUrl, risk } = userData;
 
+  const orConditions = [{ email }, { phone }];
+  if (nrc) orConditions.push({ nrc });
+
   const existingUser = await prisma.user.findFirst({
-    where: { OR: [{ email }, { phone }, { ...(nrc ? { nrc } : {}) }] }
+    where: { OR: orConditions }
   });
 
   if (existingUser) {
@@ -93,6 +103,16 @@ const verifyUser = async (id, isVerified = true) => {
   });
 };
 
+const approveUser = async (id, isApproved) => {
+  return await prisma.user.update({
+    where: { id: Number(id) },
+    data: { 
+      isApproved: isApproved,
+      status: isApproved ? 'active' : 'pending_approval'
+    }
+  });
+};
+
 const deleteUser = async (id) => {
   return await prisma.user.delete({
     where: { id: parseInt(id) }
@@ -120,9 +140,9 @@ const getAgentClients = async (agentId) => {
         where: { agentId: parseInt(agentId) },
         select: {
           id: true,
-          amount: true,
+          principalAmount: true,
           status: true,
-          interest: true
+          interestRate: true
         }
       }
     },
@@ -135,6 +155,7 @@ module.exports = {
   createUser,
   updateUser,
   verifyUser,
+  approveUser,
   deleteUser,
   getAgentClients
 };

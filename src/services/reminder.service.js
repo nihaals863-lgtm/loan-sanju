@@ -21,28 +21,49 @@ const sendLoanReminders = async () => {
     const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24)); // negative = before due
 
     const phone = loan.user.phone;
-    const amount = `K${Number(loan.amount).toLocaleString()}`;
+    const amountStr = `K${Number(loan.principalAmount).toLocaleString()}`;
 
-    if (diffDays === -1) {
-      // 1 day BEFORE due date
-      const msg = `⏰ Reminder: Your loan payment of ${amount} is due TOMORROW. Pay on time to avoid late fees.`;
-      const success = await sendSMS(phone, msg);
-      await prisma.notification.create({
-        data: { userId: loan.userId, title: 'Loan Reminder (1 Day Before)', message: msg, type: 'SMS', status: success ? 'SENT' : 'FAILED' }
-      });
+    let msg = '';
+    let title = '';
+
+    if (diffDays === -3) {
+      msg = `⏳ Reminder: Your loan payment for ${amountStr} is due in 3 days. Prepare your funds.`;
+      title = 'Loan Reminder (3 Days Before)';
     } else if (diffDays === 0) {
-      // On due date
-      const msg = `📅 Today is your payment due date. Please pay ${amount} now to avoid penalties.`;
-      const success = await sendSMS(phone, msg);
-      await prisma.notification.create({
-        data: { userId: loan.userId, title: 'Loan Due Reminder', message: msg, type: 'SMS', status: success ? 'SENT' : 'FAILED' }
-      });
+      msg = `📅 Today is your payment due date. Please pay ${amountStr} now to avoid penalties.`;
+      title = 'Loan Due Reminder';
     } else if (diffDays === (loan.graceDays || 0) + 1) {
-      // 1 day after grace period ends
-      const msg = `🚨 LATE ALERT: Your loan payment of ${amount} is now overdue. Late fees are being applied daily.`;
+      msg = `🚨 LATE ALERT: Your loan payment of ${amountStr} is now overdue. Late fees are being applied daily.`;
+      title = 'Late Payment Alert (After Grace)';
+    } else if (diffDays > (loan.graceDays || 0) + 1 && (diffDays - (loan.graceDays || 0)) % 7 === 0) {
+      // Weekly overdue reminder
+      msg = `⚠️ WEEKLY REMINDER: Your loan payment for ${amountStr} is still overdue. Total balance is increasing. Please settle immediately.`;
+      title = 'Weekly Overdue Reminder';
+    }
+
+    if (msg) {
       const success = await sendSMS(phone, msg);
+      
+      // Log SMS
       await prisma.notification.create({
-        data: { userId: loan.userId, title: 'Late Payment Alert', message: msg, type: 'SMS', status: success ? 'SENT' : 'FAILED' }
+        data: { 
+          userId: loan.userId, 
+          title, 
+          message: msg, 
+          type: 'SMS', 
+          status: success ? 'SENT' : 'FAILED' 
+        }
+      });
+
+      // Log EMAIL (Mock)
+      await prisma.notification.create({
+        data: { 
+          userId: loan.userId, 
+          title, 
+          message: msg, 
+          type: 'EMAIL', 
+          status: 'SENT' 
+        }
       });
     }
   }

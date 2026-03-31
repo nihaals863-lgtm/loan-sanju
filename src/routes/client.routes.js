@@ -7,21 +7,30 @@ const loanController = require('../controllers/loan.controller');
 const paymentController = require('../controllers/payment.controller');
 const commissionController = require('../controllers/commission.controller');
 const notificationController = require('../controllers/notification.controller');
+const referralController = require('../controllers/referral.controller');
 const collateralController = require('../controllers/collateral.controller');
+const analyticsController = require('../controllers/analytics.controller');
 
 // Borrower and Agent only
 router.use(authenticate, authorizeRoles('BORROWER', 'AGENT'));
 
+// Stats route
+router.get('/stats', analyticsController.getDashboardStats);
+
 // Loan routes
 router.post('/loans/apply', loanController.applyLoan);
-router.get('/loans/my', loanController.getMyLoans); // Client can view own loans
+router.get('/loans/my', loanController.getMyLoans);
+router.put('/loans/:id/accept-terms', loanController.acceptTerms);
 
 // Payment routes
 router.post('/payments', paymentController.createPayment);
+router.put('/payments/:id', paymentController.updatePayment);
 router.get('/payments/my', paymentController.getPayments);
 
 // Notification routes
 router.get('/notifications/my', notificationController.getMyNotifications);
+router.get('/referrals/my', referralController.getReferrals);
+router.get('/referrals/stats', referralController.getReferralStats);
 
 // Collateral routes
 router.post('/collateral', collateralController.uploadCollateral);

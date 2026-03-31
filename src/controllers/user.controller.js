@@ -30,13 +30,13 @@ const updateUser = async (req, res) => {
   }
 };
 
-const verifyUser = async (req, res) => {
+const approveUser = async (req, res) => {
   try {
-    const { isVerified } = req.body;
-    const user = await userService.verifyUser(req.params.id, isVerified);
+    const { isApproved } = req.body;
+    const user = await userService.approveUser(req.params.id, isApproved);
     res.status(200).json({ 
       success: true, 
-      message: `User ${isVerified ? 'verified' : 'unverified'} successfully`, 
+      message: `User ${isApproved ? 'approved' : 'put back to pending'} successfully`, 
       user 
     });
   } catch (error) {
@@ -66,7 +66,7 @@ module.exports = {
   getAllUsers,
   createUser,
   updateUser,
-  verifyUser,
+  approveUser,
   deleteUser,
   getAgentClients
 };

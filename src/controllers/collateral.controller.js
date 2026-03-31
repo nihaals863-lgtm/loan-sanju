@@ -11,6 +11,8 @@ const uploadCollateral = async (req, res) => {
     const collateral = await prisma.collateral.create({
       data: {
         userId: req.user.id,
+        name: name || 'UNNAMED_ASSET',
+        type: type || 'FILE',
         imageUrl: `https://api.placeholder.com/documents/${Date.now()}`,
         verified: false
       }

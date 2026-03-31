@@ -12,13 +12,16 @@ enum Role {
   STAFF
   BORROWER
   AGENT
+  LENDER
 }
 
 enum LoanStatus {
   PENDING
-  APPROVED
-  REJECTED
+  TERMS_SET
+  TERMS_ACCEPTED
+  FUNDS_CONFIRMED
   ACTIVE
+  REJECTED
   COMPLETED
 }
 
@@ -29,10 +32,18 @@ enum PaymentStatus {
   LATE
 }
 
+enum PaymentType {
+  MONTHLY_INTEREST
+  PRINCIPAL_PAYDOWN
+  PAYOFF
+}
+
 enum PaymentMethod {
   CASH
   WIRE
   TRX
+  MOBILE_MONEY
+  BANK_TRANSFER
 }
 
 enum Risk {
@@ -49,6 +60,8 @@ model User {
   password   String
   role       Role     @default(BORROWER)
   isVerified Boolean  @default(false)
+  isApproved Boolean  @default(false)
+  status     String   @default("pending_approval") // pending_approval, active, suspended
   risk       Risk     @default(GREEN)
   
   // Profile Fields
@@ -56,7 +69,8 @@ model User {
   nrc          String?  @unique
   dob          DateTime?
   address      String?  @db.Text
-  documentUrl  String?
+  documentUrl  String?  @db.LongText
+  referralCode String?  @unique
 
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -66,7 +80,24 @@ model User {
   collaterals           Collateral[]
   agentCommissions      Commission[] @relation("AgentCommissions")
   borrowerCommissions   Commission[] @relation("BorrowerCommissions")
+  payouts               Payout[]
   notifications         Notification[]
+  referralsMade         Referral[] @relation("Referrer")
+  referralReceived      Referral? @relation("Referred")
+}
+
+model Referral {
+  id          Int      @id @default(autoincrement())
+  referrerId  Int
+  referrer    User     @relation("Referrer", fields: [referrerId], references: [id])
+  referredId  Int      @unique
+  referred    User     @relation("Referred", fields: [referredId], references: [id])
+  
+  status      String   @default("PENDING") // PENDING, QUALIFIED, REWARDED
+  rewardAmount Decimal @db.Decimal(10, 2) @default(50.00)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model Loan {
@@ -75,32 +106,63 @@ model Loan {
   user      User       @relation(fields: [userId], references: [id])
   agentId   Int?
   agent     User?      @relation("LoanAgent", fields: [agentId], references: [id])
-  amount    Float
-  duration  Int        // in months
-  interest  Float
   
-  agentPercentage   Float @default(0)
-  lateFeePercentage Float @default(0)
-  graceDays         Int   @default(0)
+  // Financial Terms
+  principalAmount   Decimal @db.Decimal(15, 2)
+  currentPrincipal  Decimal @db.Decimal(15, 2)
+  initiationFeeRate Decimal @db.Decimal(5, 2) // %
+  initiationFee     Decimal @db.Decimal(15, 2)
+  disbursedAmount   Decimal @db.Decimal(15, 2)
+  interestRate      Decimal @db.Decimal(5, 2) // % monthly
+  
+  dueDay            Int     @default(1)
+  graceDays         Int     @default(0)
+  latePenaltyRate   Decimal @db.Decimal(5, 2) @default(5.00) // %
+  agentCommissionRate Decimal @db.Decimal(5, 2) @default(5.00) // %
+  duration          Int     @default(1) // months
+  monthlyPaymentCurrent Decimal @db.Decimal(15, 2) @default(0.00)
 
   status    LoanStatus @default(PENDING)
+  
+  // Flow tracking
+  borrowerAcceptedTerms Boolean @default(false)
+  termsAcceptedAt       DateTime?
+  adminConfirmedFunds   Boolean @default(false)
+  fundsConfirmedAt      DateTime?
+
   dueDate   DateTime?
+  
+  // Disbursement & Details
+  disbursementMethod String?
+  deliveryAddress    String?  @db.Text
+  whatsapp           String?
+  bankName           String?
+  accountNumber      String?
+  accountName        String?
+  description        String?  @db.Text
+
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
-  payments  Payment[]
+  payments    Payment[]
+  commissions Commission[] @relation("LoanCommissions")
 }
 
 model Payment {
   id        Int           @id @default(autoincrement())
   loanId    Int
   loan      Loan          @relation(fields: [loanId], references: [id])
-  amount    Float
   
-  lateDays    Int?
-  lateAmount  Float?
-  totalAmount Float @default(0)
+  type      PaymentType   @default(MONTHLY_INTEREST)
+  
+  baseAmount      Decimal @db.Decimal(15, 2) // interest component
+  penaltyAmount   Decimal @db.Decimal(15, 2) @default(0)
+  principalPaid   Decimal @db.Decimal(15, 2) @default(0)
+  totalCollected  Decimal @db.Decimal(15, 2)
+  dueDate         DateTime?     @db.Date
 
+  lateDays    Int?
+  
   status    PaymentStatus @default(PENDING)
   method    PaymentMethod @default(CASH)
   trxId     String?       @unique
@@ -109,21 +171,54 @@ model Payment {
   updatedAt DateTime      @updatedAt
 }
 
+enum CommissionStatus {
+  PENDING
+  PAID
+}
+
+enum PayoutStatus {
+  PENDING
+  COMPLETED
+  REJECTED
+}
+
+model Payout {
+  id          Int          @id @default(autoincrement())
+  agentId     Int
+  agent       User         @relation(fields: [agentId], references: [id])
+  amount      Decimal      @db.Decimal(15, 2)
+  status      PayoutStatus @default(PENDING)
+  method      String?
+  trxId       String?      @unique
+  processedAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
 model Commission {
-  id         Int      @id @default(autoincrement())
+  id         Int              @id @default(autoincrement())
   agentId    Int
-  agent      User     @relation("AgentCommissions", fields: [agentId], references: [id])
+  agent      User             @relation("AgentCommissions", fields: [agentId], references: [id])
   borrowerId Int
-  borrower   User     @relation("BorrowerCommissions", fields: [borrowerId], references: [id])
-  amount     Float
-  percentage Float
-  createdAt  DateTime @default(now())
+  borrower   User             @relation("BorrowerCommissions", fields: [borrowerId], references: [id])
+  loanId     Int
+  loan       Loan             @relation("LoanCommissions", fields: [loanId], references: [id])
+  
+  amount     Decimal          @db.Decimal(15, 2)
+  percentage Decimal          @db.Decimal(5, 2)
+  
+  status     CommissionStatus @default(PENDING)
+  paymentId  Int?
+  
+  createdAt  DateTime         @default(now())
 }
 
 model Collateral {
   id        Int      @id @default(autoincrement())
   userId    Int
   user      User     @relation(fields: [userId], references: [id])
+  name      String   @default("UNNAMED_ASSET")
+  type      String   @default("FILE")
   imageUrl  String
   verified  Boolean  @default(false)
   createdAt DateTime @default(now())

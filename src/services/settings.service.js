@@ -4,7 +4,12 @@ const getSettings = async () => {
   const settings = await prisma.settings.findMany();
   // Transform to key-value object for easier frontend use
   return settings.reduce((acc, s) => {
-    acc[s.key] = s.value;
+    let val = s.value;
+    if (val === 'true') val = true;
+    else if (val === 'false') val = false;
+    else if (!isNaN(val) && val.trim() !== '') val = Number(val);
+    
+    acc[s.key] = val;
     return acc;
   }, {});
 };
