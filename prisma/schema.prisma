@@ -51,6 +51,7 @@ enum Risk {
   AMBER
   RED
 }
+  
 
 model User {
   id         Int      @id @default(autoincrement())
@@ -84,6 +85,7 @@ model User {
   notifications         Notification[]
   referralsMade         Referral[] @relation("Referrer")
   referralReceived      Referral? @relation("Referred")
+  @@map("user")
 }
 
 model Referral {
@@ -98,6 +100,7 @@ model Referral {
   
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  @@map("referral")
 }
 
 model Loan {
@@ -146,6 +149,7 @@ model Loan {
 
   payments    Payment[]
   commissions Commission[] @relation("LoanCommissions")
+  @@map("loan") 
 }
 
 model Payment {
@@ -169,6 +173,8 @@ model Payment {
   paidAt    DateTime?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
+  @@map("payment")
+
 }
 
 enum CommissionStatus {
@@ -193,6 +199,8 @@ model Payout {
   processedAt DateTime?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
+  @@map("payout")
+  
 }
 
 model Commission {
@@ -211,6 +219,8 @@ model Commission {
   paymentId  Int?
   
   createdAt  DateTime         @default(now())
+  @@map("commission")
+                       
 }
 
 model Collateral {
@@ -223,6 +233,7 @@ model Collateral {
   verified  Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+   @@map("collateral")
 }
 
 // ─── Notification ───────────────────────────
@@ -243,6 +254,8 @@ model Notification {
   error     String?          @db.Text
   isRead    Boolean          @default(false)
   createdAt DateTime         @default(now())
+   @@map("notification")
+          
 }
 
 // ─── Settings (System-wide config) ──────────
@@ -253,4 +266,8 @@ model Settings {
   label     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+   @@map("settings")
 }
+
+
+
