@@ -20,7 +20,8 @@ app.use(cors({
       'http://localhost:5173',
       'http://localhost:5174',
       'http://localhost:5175',
-      'http://127.0.0.1:5173'
+      'http://127.0.0.1:5173',
+      'https://loan-management.kiaansoftware.com'
     ].filter(Boolean);
     
     // Check if origin is allowed or if it's a sub-domain of Railway
