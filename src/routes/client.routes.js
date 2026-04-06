@@ -19,8 +19,11 @@ router.get('/stats', analyticsController.getDashboardStats);
 
 // Loan routes
 router.post('/loans/apply', loanController.applyLoan);
+/** Borrower-focused: amount + duration + description (+ optional disbursement fields) */
+router.post('/loan-request', loanController.loanRequest);
 router.get('/loans/my', loanController.getMyLoans);
 router.put('/loans/:id/accept-terms', loanController.acceptTerms);
+router.put('/loans/:id/reject-offer', loanController.rejectOffer);
 
 // Payment routes
 router.post('/payments', paymentController.createPayment);

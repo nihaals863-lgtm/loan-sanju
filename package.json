@@ -8,6 +8,8 @@
     "dev": "nodemon server.js",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
+    "seed": "node prisma/seed.js",
+    "build": "prisma generate && prisma db push",
     "postinstall": "prisma generate"
   },
   "dependencies": {
@@ -21,6 +23,9 @@
     "nodemailer": "^8.0.4",
     "puppeteer": "^24.40.0",
     "twilio": "^5.13.0"
+  },
+  "prisma": {
+    "seed": "node ./prisma/seed.js"
   },
   "devDependencies": {
     "nodemon": "^3.1.0",

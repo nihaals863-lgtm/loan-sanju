@@ -19,8 +19,8 @@ app.use(cors({
       'https://loan-sanju-production.up.railway.app',
       'http://localhost:5173',
       'http://localhost:5174',
-      'http://127.0.0.1:5173',
-      'https://loan-sanj.kiaantechnology.com'
+      'http://localhost:5175',
+      'http://127.0.0.1:5173'
     ].filter(Boolean);
     
     // Check if origin is allowed or if it's a sub-domain of Railway

@@ -35,6 +35,7 @@ router.put('/loans/:id/set-terms', loanController.setTerms);
 router.put('/loans/:id/confirm-funds', loanController.confirmFunds);
 router.put('/loans/:id/reject', loanController.rejectLoan);
 router.put('/loans/:id/interest', loanController.updateInterest);
+router.put('/loans/:id/agent', loanController.assignAgent);
 
 // View all payments
 router.get('/payments', paymentController.getPayments);

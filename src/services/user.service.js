@@ -47,6 +47,8 @@ const getUsers = async (role, search) => {
 
 const createUser = async (userData) => {
   const { name, email, phone, password, role, businessName, nrc, dob, address, documentUrl, risk } = userData;
+  const normalizedRole = String(role || 'BORROWER').toUpperCase();
+  const startsPendingApproval = normalizedRole === 'BORROWER' || normalizedRole === 'AGENT';
 
   const orConditions = [{ email }, { phone }];
   if (nrc) orConditions.push({ nrc });
@@ -67,8 +69,10 @@ const createUser = async (userData) => {
       email,
       phone,
       password: hashedPassword,
-      role: role || 'BORROWER',
-      isVerified: true,
+      role: normalizedRole,
+      isVerified: !startsPendingApproval,
+      isApproved: !startsPendingApproval,
+      status: startsPendingApproval ? 'pending_approval' : 'active',
       risk: risk || 'GREEN',
       businessName,
       nrc,
@@ -120,13 +124,20 @@ const deleteUser = async (id) => {
 };
 
 const getAgentClients = async (agentId) => {
+  const aid = parseInt(agentId, 10);
   return await prisma.user.findMany({
     where: {
-      loans: {
-        some: {
-          agentId: parseInt(agentId)
-        }
-      }
+      role: 'BORROWER',
+      OR: [
+        { agentId: aid },
+        {
+          loans: {
+            some: {
+              agentId: aid,
+            },
+          },
+        },
+      ],
     },
     select: {
       id: true,

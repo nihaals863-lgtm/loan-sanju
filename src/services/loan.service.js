@@ -1,6 +1,16 @@
 const prisma = require('../config/db');
 const settingsService = require('./settings.service');
 
+const normalizePaymentMethod = (value) => {
+  const raw = String(value || '').trim().toUpperCase();
+  if (raw === 'CASH') return 'CASH';
+  if (raw === 'WIRE') return 'WIRE';
+  if (raw === 'TRX') return 'TRX';
+  if (raw === 'MOBILE_MONEY' || raw === 'MOBILEMONEY') return 'MOBILE_MONEY';
+  if (raw === 'BANK_TRANSFER' || raw === 'BANKTRANSFER' || raw === 'BANK') return 'BANK_TRANSFER';
+  return 'CASH';
+};
+
 const applyForLoan = async (userId, data) => {
   const { 
     amount, duration, interest,
@@ -8,32 +18,42 @@ const applyForLoan = async (userId, data) => {
     bankName, accountNumber, accountName,
     description 
   } = data;
+
+  const principal = Number(amount);
+  const months = Number(duration);
+  if (!Number.isFinite(principal) || principal <= 0) {
+    throw new Error('Invalid loan amount');
+  }
+  if (!Number.isFinite(months) || months <= 0 || !Number.isInteger(months)) {
+    throw new Error('Invalid loan duration (months)');
+  }
+
   const settings = await settingsService.getSettings();
 
   const loan = await prisma.loan.create({
     data: {
       userId,
-      principalAmount: Number(amount),
-      currentPrincipal: Number(amount),
-      disbursementMethod: method,
-      deliveryAddress: address,
-      whatsapp,
-      bankName,
-      accountNumber,
-      accountName,
-      description,
-      duration: Number(duration),
+      principalAmount: principal,
+      currentPrincipal: principal,
+      disbursementMethod: method ?? 'cash',
+      deliveryAddress: address ?? null,
+      whatsapp: whatsapp ?? null,
+      bankName: bankName ?? null,
+      accountNumber: accountNumber ?? null,
+      accountName: accountName ?? null,
+      description: description != null && description !== '' ? String(description) : null,
+      duration: months,
       // Set values from settings or fallback to hardcoded defaults
       initiationFeeRate: 0,
       initiationFee: 0,
-      disbursedAmount: Number(amount),
+      disbursedAmount: principal,
       interestRate: interest ? Number(interest) : (settings.default_interest || 10),
       dueDay: 1,
       graceDays: settings.default_grace_days || 3,
       latePenaltyRate: settings.default_late_fee || 5,
       agentCommissionRate: settings.default_agent_percentage || 5,
       status: 'PENDING',
-      monthlyPaymentCurrent: Number(amount) * ((interest ? Number(interest) : (settings.default_interest || 10)) / 100)
+      monthlyPaymentCurrent: principal * ((interest ? Number(interest) : (settings.default_interest || 10)) / 100)
     }
   });
   console.log("[LOAN SERVICE] CREATED", loan.id);
@@ -51,22 +71,44 @@ const getAllLoans = async () => {
 const setLoanTerms = async (loanId, terms) => {
   const settings = await settingsService.getSettings();
 
-  const { 
-    initiationFeeRate = 0, 
-    interestRate = terms.interestRate ?? (settings.default_interest || 10), 
-    dueDay = 1, 
-    graceDays = terms.graceDays ?? (settings.default_grace_days || 3), 
-    latePenaltyRate = terms.latePenaltyRate ?? (settings.default_late_fee || 5), 
-    agentCommissionRate = terms.agentCommissionRate ?? (settings.default_agent_percentage || 5),
-    agentId = null 
-  } = terms;
+  // Support both snake_case and existing camelCase payloads.
+  const interestRateRaw = terms.interest_rate ?? terms.interestRate ?? (settings.default_interest || 10);
+  const latePenaltyRateRaw = terms.late_fee_rate ?? terms.latePenaltyRate ?? (settings.default_late_fee || 5);
+  const graceDaysRaw = terms.grace_days ?? terms.graceDays ?? (settings.default_grace_days || 3);
+  const dueDayRaw = terms.due_day ?? terms.dueDay ?? 1;
+  const agentCommissionRateRaw = terms.agent_commission_rate ?? terms.agentCommissionRate ?? (settings.default_agent_percentage || 5);
+  const agentIdRaw = terms.agent_id ?? terms.agentId ?? null;
+  const initiationFeeRaw = terms.initiation_fee;
+  const initiationFeeRateRaw = terms.initiation_fee_rate ?? terms.initiationFeeRate ?? 0;
 
   const loan = await prisma.loan.findUnique({ where: { id: Number(loanId) } });
   if (!loan) throw new Error('Loan not found');
 
   const principal = Number(loan.principalAmount);
-  const feePercent = Number(initiationFeeRate || 0);
-  const feeAmount = principal * (feePercent / 100);
+  const rateCandidate = Number(initiationFeeRateRaw || 0);
+  const amountCandidate = initiationFeeRaw == null ? NaN : Number(initiationFeeRaw);
+
+  let feeAmount;
+  let feePercent;
+  if (Number.isFinite(amountCandidate) && amountCandidate >= 0) {
+    feeAmount = amountCandidate;
+    feePercent = principal > 0 ? (feeAmount / principal) * 100 : 0;
+  } else {
+    feePercent = Number.isFinite(rateCandidate) ? rateCandidate : 0;
+    feeAmount = principal * (feePercent / 100);
+  }
+
+  if (feeAmount < 0 || feeAmount > principal) {
+    throw new Error('initiation_fee must be between 0 and principal amount');
+  }
+
+  const interestRate = Number(interestRateRaw);
+  const latePenaltyRate = Number(latePenaltyRateRaw);
+  const graceDays = Number(graceDaysRaw);
+  const dueDay = Number(dueDayRaw || 5);
+  const agentCommissionRate = Number(agentCommissionRateRaw);
+  const agentId = agentIdRaw ? Number(agentIdRaw) : null;
+
   const disbursed = principal - feeAmount;
 
   const updatedLoan = await prisma.loan.update({
@@ -75,14 +117,14 @@ const setLoanTerms = async (loanId, terms) => {
       initiationFeeRate: feePercent,
       initiationFee: feeAmount,
       disbursedAmount: disbursed,
-      interestRate: Number(interestRate),
-      dueDay: Number(dueDay || 5),
-      graceDays: Number(graceDays),
-      latePenaltyRate: Number(latePenaltyRate),
-      agentCommissionRate: Number(agentCommissionRate),
+      interestRate,
+      dueDay,
+      graceDays,
+      latePenaltyRate,
+      agentCommissionRate,
       agentId: agentId ? Number(agentId) : null,
       status: 'TERMS_SET',
-      monthlyPaymentCurrent: principal * (Number(interestRate) / 100)
+      monthlyPaymentCurrent: principal * (interestRate / 100)
     }
   });
   console.log("[LOAN SERVICE] TERMS UPDATED", updatedLoan.id);
@@ -100,7 +142,40 @@ const acceptLoanTerms = async (loanId) => {
   });
 };
 
+const rejectLoanOffer = async (loanId, userId) => {
+  const loan = await prisma.loan.findUnique({ where: { id: Number(loanId) } });
+  if (!loan) throw new Error('Loan not found');
+  if (Number(loan.userId) !== Number(userId)) {
+    throw new Error('Not allowed to reject this loan offer');
+  }
+  if (loan.status !== 'TERMS_SET') {
+    throw new Error('Only terms-set loan offers can be rejected');
+  }
+  return prisma.loan.update({
+    where: { id: Number(loanId) },
+    data: { status: 'REJECTED' },
+  });
+};
+
 const confirmLoanFunds = async (loanId) => {
+  const existingLoan = await prisma.loan.findUnique({
+    where: { id: Number(loanId) },
+    select: { id: true, userId: true, status: true },
+  });
+  if (!existingLoan) throw new Error('Loan not found');
+
+  // KYC gate: when collateral engine is enabled, at least one verified collateral is required.
+  const settings = await settingsService.getSettings();
+  const collateralEnabled = String(settings.collateral_enabled ?? 'true') !== 'false';
+  if (collateralEnabled) {
+    const verifiedCount = await prisma.collateral.count({
+      where: { userId: existingLoan.userId, verified: true },
+    });
+    if (verifiedCount === 0) {
+      throw new Error('KYC not completed: verify borrower collateral before confirming funds');
+    }
+  }
+
   const loan = await prisma.loan.update({
     where: { id: Number(loanId) },
     data: {
@@ -133,7 +208,7 @@ const confirmLoanFunds = async (loanId) => {
         totalCollected: monthlyInterest,
         status: 'PENDING',
         dueDate: firstDueDate,
-        method: loan.disbursementMethod || 'CASH'
+        method: normalizePaymentMethod(loan.disbursementMethod)
       }
     });
   }
@@ -186,13 +261,42 @@ const updateInterestRate = async (loanId, interestRate) => {
   });
 };
 
+const assignLoanAgent = async (loanId, agentId) => {
+  const loan = await prisma.loan.findUnique({ where: { id: Number(loanId) } });
+  if (!loan) throw new Error('Loan not found');
+
+  let nextAgentId = null;
+  if (agentId !== null && agentId !== undefined && agentId !== '') {
+    const parsed = Number(agentId);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      throw new Error('Invalid agent id');
+    }
+    const agent = await prisma.user.findUnique({
+      where: { id: parsed },
+      select: { id: true, role: true },
+    });
+    if (!agent || agent.role !== 'AGENT') {
+      throw new Error('Selected user is not a valid agent');
+    }
+    nextAgentId = parsed;
+  }
+
+  return prisma.loan.update({
+    where: { id: Number(loanId) },
+    data: { agentId: nextAgentId },
+    include: { user: true, agent: true, payments: true },
+  });
+};
+
 module.exports = { 
   applyForLoan, 
   getLoansByUser, 
   getAllLoans, 
   setLoanTerms, 
   acceptLoanTerms, 
+  rejectLoanOffer,
   confirmLoanFunds, 
   rejectLoan,
-  updateInterestRate
+  updateInterestRate,
+  assignLoanAgent
 };

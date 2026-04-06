@@ -1,5 +1,15 @@
 const prisma = require('../config/db');
 
+const normalizePaymentMethod = (value) => {
+  const raw = String(value || '').trim().toUpperCase();
+  if (raw === 'CASH') return 'CASH';
+  if (raw === 'WIRE') return 'WIRE';
+  if (raw === 'TRX') return 'TRX';
+  if (raw === 'MOBILE_MONEY' || raw === 'MOBILEMONEY') return 'MOBILE_MONEY';
+  if (raw === 'BANK_TRANSFER' || raw === 'BANKTRANSFER' || raw === 'BANK') return 'BANK_TRANSFER';
+  return 'CASH';
+};
+
 // ─────────────────────────────────────────
 // calculateLateFee(loan, payment)
 // Returns: { lateDays, lateAmount, totalAmount }
@@ -31,6 +41,59 @@ const calculateLateFee = (loan) => {
   }
 
   return { lateDays: 0, penaltyAmount: 0 };
+};
+
+const ensurePendingPaymentsForActiveLoans = async () => {
+  const activeLoans = await prisma.loan.findMany({
+    where: { status: 'ACTIVE' },
+    select: {
+      id: true,
+      dueDate: true,
+      dueDay: true,
+      disbursementMethod: true,
+      monthlyPaymentCurrent: true,
+      principalAmount: true,
+      interestRate: true,
+    },
+  });
+
+  for (const loan of activeLoans) {
+    const pendingExists = await prisma.payment.findFirst({
+      where: {
+        loanId: loan.id,
+        type: 'MONTHLY_INTEREST',
+        status: 'PENDING',
+      },
+      select: { id: true },
+    });
+
+    if (pendingExists) continue;
+
+    const monthlyInterest = Number(
+      loan.monthlyPaymentCurrent ||
+      (Number(loan.principalAmount || 0) * (Number(loan.interestRate || 0) / 100))
+    );
+    if (!Number.isFinite(monthlyInterest) || monthlyInterest <= 0) continue;
+
+    const now = new Date();
+    const dueDay = Number(loan.dueDay || 1);
+    const fallbackDueDate = new Date(now.getFullYear(), now.getMonth() + 1, dueDay);
+    const dueDate = loan.dueDate ? new Date(loan.dueDate) : fallbackDueDate;
+
+    await prisma.payment.create({
+      data: {
+        loanId: loan.id,
+        type: 'MONTHLY_INTEREST',
+        baseAmount: monthlyInterest,
+        penaltyAmount: 0,
+        principalPaid: 0,
+        totalCollected: monthlyInterest,
+        status: 'PENDING',
+        dueDate,
+        method: normalizePaymentMethod(loan.disbursementMethod),
+      },
+    });
+  }
 };
 
 const submitPayment = async (loanId, { amount, method, trxId, type = 'MONTHLY_INTEREST' }) => {
@@ -69,7 +132,7 @@ const submitPayment = async (loanId, { amount, method, trxId, type = 'MONTHLY_IN
       penaltyAmount,
       principalPaid,
       totalCollected,
-      method,
+      method: normalizePaymentMethod(method),
       trxId,
       status: 'PENDING',
       lateDays
@@ -147,7 +210,8 @@ const verifyPayment = async (paymentId) => {
           principalPaid: 0,
           totalCollected: monthlyInterestNext,
           status: 'PENDING',
-          method: payment.method || 'CASH'
+          dueDate: nextDueDate,
+          method: normalizePaymentMethod(payment.method)
         }
       });
     }
@@ -236,12 +300,15 @@ const verifyPayment = async (paymentId) => {
 };
 
 const getAllPayments = async () => {
+  await ensurePendingPaymentsForActiveLoans();
   return await prisma.payment.findMany({
-    include: { loan: { include: { user: true } } }
+    include: { loan: { include: { user: true } } },
+    orderBy: { createdAt: 'desc' }
   });
 };
 
 const getPaymentsByUser = async (userId) => {
+  await ensurePendingPaymentsForActiveLoans();
   return await prisma.payment.findMany({
     where: { loan: { userId } },
     include: { loan: true }

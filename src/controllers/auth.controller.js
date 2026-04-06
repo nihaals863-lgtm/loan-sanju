@@ -5,7 +5,7 @@ const { generateToken } = require('../utils/jwt');
 const register = async (req, res) => {
   console.log("[AUTH REGISTER REQUEST]", { ...req.body, password: '***' });
   try {
-    const { name, email, phone, password, role, dob, address, documentUrl, nrc } = req.body;
+    const { name, email, phone, password, role, dob, address, documentUrl, nrc, ref } = req.body;
 
     // Allow registering only strictly BORROWER or AGENT from public endpoint
     const allowedRoles = ['BORROWER', 'AGENT'];
@@ -21,6 +21,21 @@ const register = async (req, res) => {
 
     const hashedPassword = await hashPassword(password);
 
+    /** Optional agent referral: ?ref=<agentUserId> — only for BORROWER signups */
+    let agentId = null;
+    if (userRole === 'BORROWER' && ref != null && String(ref).trim() !== '') {
+      const parsed = parseInt(String(ref).trim(), 10);
+      if (!Number.isNaN(parsed) && parsed > 0) {
+        const refUser = await prisma.user.findUnique({
+          where: { id: parsed },
+          select: { id: true, role: true },
+        });
+        if (refUser && refUser.role === 'AGENT') {
+          agentId = refUser.id;
+        }
+      }
+    }
+
     const userData = {
       name,
       email,
@@ -29,7 +44,8 @@ const register = async (req, res) => {
       role: userRole,
       isVerified: false,
       isApproved: false,
-      status: 'pending_approval'
+      status: 'pending_approval',
+      ...(agentId != null ? { agentId } : {}),
     };
     if (dob) userData.dob = new Date(dob);
     if (address) userData.address = address;
@@ -76,10 +92,7 @@ const login = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid credentials' });
     }
 
-    // Check if user is approved (Admin bypass)
-    if (!user.isApproved && user.role !== 'ADMIN') {
-      return res.status(403).json({ success: false, message: 'Your account is pending admin approval' });
-    }
+    // isApproved check removed — users can login; feature access is controlled per role
 
     const token = generateToken(user.id, user.role);
 
@@ -117,4 +130,71 @@ const getMe = async (req, res) => {
   }
 };
 
-module.exports = { register, login, registerBorrower, registerAgent, getMe };
+const quickLogin = async (req, res) => {
+  try {
+    const { role } = req.body;
+    const roleMap = {
+      admin: 'ADMIN',
+      staff: 'STAFF',
+      agent: 'AGENT',
+      borrower: 'BORROWER'
+    };
+    const dbRole = roleMap[role?.toLowerCase()];
+    if (!dbRole) {
+      return res.status(400).json({ success: false, message: 'Invalid role' });
+    }
+
+    const user = await prisma.user.findFirst({ where: { role: dbRole } });
+    if (!user) {
+      return res.status(404).json({ success: false, message: `No ${role} user found in database` });
+    }
+
+    const token = generateToken(user.id, user.role);
+    res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      token,
+      user: { id: user.id, name: user.name, role: user.role }
+    });
+  } catch (error) {
+    console.error("[AUTH QUICK-LOGIN ERROR]", error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const getDemoCredentials = async (req, res) => {
+  try {
+    const { role } = req.params;
+    const roleMap = {
+      admin: 'ADMIN',
+      staff: 'STAFF',
+      agent: 'AGENT',
+      borrower: 'BORROWER'
+    };
+    const dbRole = roleMap[role?.toLowerCase()];
+    if (!dbRole) {
+      return res.status(400).json({ success: false, message: 'Invalid role' });
+    }
+
+    const user = await prisma.user.findFirst({
+      where: { role: dbRole },
+      select: { email: true, name: true, phone: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: `No ${role} user found in database` });
+    }
+
+    res.status(200).json({
+      success: true,
+      email: user.email,
+      name: user.name,
+      phone: user.phone,
+    });
+  } catch (error) {
+    console.error("[AUTH DEMO-CREDS ERROR]", error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+module.exports = { register, login, registerBorrower, registerAgent, getMe, quickLogin, getDemoCredentials };

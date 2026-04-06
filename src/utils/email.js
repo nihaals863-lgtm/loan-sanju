@@ -4,6 +4,7 @@ const nodemailer = require('nodemailer');
 const buildTransporter = () => {
   const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
   if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) return null;
+  if (SMTP_USER.includes('your_') || SMTP_PASS.includes('your_')) return null;
   return nodemailer.createTransport({
     host: SMTP_HOST,
     port: Number(SMTP_PORT) || 587,

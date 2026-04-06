@@ -95,7 +95,15 @@ const getDashboardStats = async (user) => {
 
   if (role === 'AGENT') {
     const [clientsCount, totalEarnings, commissions, activeLoans, pendingPayouts] = await Promise.all([
-      prisma.user.count({ where: { loansAsAgent: { some: { agentId: id } } } }),
+      prisma.user.count({
+        where: {
+          role: 'BORROWER',
+          OR: [
+            { agentId: id },
+            { loans: { some: { agentId: id } } },
+          ],
+        },
+      }),
       prisma.commission.aggregate({ where: { agentId: id }, _sum: { amount: true } }),
       prisma.commission.findMany({
         where: { agentId: id },
